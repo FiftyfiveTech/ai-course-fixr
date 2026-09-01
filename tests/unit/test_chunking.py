@@ -136,7 +136,9 @@ def test_load_chunks_round_trips_and_complains_when_absent(tmp_path, tok, monkey
 
 def test_extract_pages_reads_a_real_pdf(tmp_path):
     """One page in, one page of text out — the pypdf path itself, no mocking."""
-    pypdf = pytest.importorskip("pypdf")
+    # pypdf is a hard dependency (pyproject), so a plain import — not importorskip — because a
+    # missing pypdf must FAIL this test loudly, never skip it silently (FIXR-001).
+    import pypdf
     # Written here rather than checked in as a binary fixture: what is being tested is that
     # extract_pages numbers pages from 1 and reports no-text as '', not what pypdf can parse.
     writer = pypdf.PdfWriter()
