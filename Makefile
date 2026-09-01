@@ -25,8 +25,10 @@ gate:
 	uv run pytest tests/gates -q
 
 demo:
-	@echo "not implemented yet. make demo must run the system end to end from a clean clone."
-	@exit 1
+	@uv run python -m src.triage \
+		--text-file demo/incident_note.txt \
+		--audio tests/fixtures/casual_leave_question.mp3 \
+		--screenshot demo/incident_screenshot.png
 
 clean:
 	rm -rf .venv .pytest_cache **/__pycache__

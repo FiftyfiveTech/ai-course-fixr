@@ -27,7 +27,7 @@ import sys
 from collections import namedtuple
 
 from src import (cooldown, embeddings as embed_mod, errors, nlu, stt as stt_mod,
-                 tts as tts_mod, vocab_bias)
+                 tts as tts_mod, vision as vision_mod, vocab_bias)
 from src.config import (ARMS, DEFAULT_COOLDOWN_S, FALLBACKS, SAMPLE_RATE, STT_LANGUAGE,
                         resolve)
 from src.telemetry import log_call
@@ -36,7 +36,8 @@ from src.telemetry import log_call
 # instead of leaving the speaker to assume one.
 Speech = namedtuple("Speech", "audio sample_rate")
 
-_MODULES = {"stt": stt_mod, "llm": nlu, "tts": tts_mod, "embed": embed_mod}
+_MODULES = {"stt": stt_mod, "llm": nlu, "tts": tts_mod, "embed": embed_mod,
+            "vision": vision_mod}
 
 
 def available(stage=None):
@@ -306,4 +307,25 @@ def embed(texts, model_id=None, *, turn_id, is_query=False, fallback=False, **ex
     arm = resolve("embed", model_id)
     payload = {"texts": texts, "is_query": is_query}
     result, _ran = _call("embed", arm, payload, turn_id, None, fallback, **extra)
+    return result
+
+
+def vision(image, media_type, prompt, model_id=None, *, turn_id, fallback=False, **extra):
+    """-> the text a document-VLM reads off `image` (raw screenshot bytes). Raises on a provider
+    error rather than returning a plausible-but-empty read.
+
+    `fallback` defaults to **False**, like `embed` and unlike the turn stages: there is no local
+    free VLM to route to, and a different vision model would *read* the screenshot differently
+    rather than degrade the same read. `config.FALLBACKS` has no `vision` entry for the same reason;
+    the argument exists only so the signature does not lie about what `_call` supports. When the
+    free tier is not configured at all, the ingest layer stands in an offline stub *before* calling
+    here — that is a decision made above this function, not a substitution made inside it.
+
+    `prompt` is a versioned prompt file's body, passed in by the caller — no instruction is inlined
+    in the backend, the same rule `nlu` follows.
+    """
+    arm = resolve("vision", model_id)
+    payload = {"image": image, "media_type": media_type, "prompt": prompt}
+    result, _ran = _call("vision", arm, payload, turn_id, None, fallback,
+                         image_bytes=len(image), **extra)
     return result

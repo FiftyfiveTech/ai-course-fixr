@@ -29,14 +29,19 @@ from src import arms, cooldown, errors, loop, nlu, stt
 from src.config import ARMS, FALLBACKS, LLM_ARMS, PIPELINE, STT_ARMS, TTS_ARMS, resolve
 from tests.unit.test_rate_limit import FakeResponse, _capture, hosted_arm, rate_limited, serve
 
-MODEL_STAGES = tuple(ARMS)          # stt, llm, tts, embed — vad is not an arm yet
+MODEL_STAGES = tuple(ARMS)          # stt, llm, tts, embed, vision — vad is not an arm yet
 
-# The stages a fallback is *meaningful* for. Not `embed`: a second encoder answers the query in a
-# different vector space from the one the cached chunk vectors live in, so every cosine it produced
-# would be arithmetic between unrelated bases — and a meaningless cosine is still a number between
-# -1 and 1, so nothing downstream could tell. `src/retrieval.py` skips the dense half instead, which
-# is a worse ranking rather than a wrong one.
-FALLBACK_STAGES = tuple(s for s in MODEL_STAGES if s != "embed")
+# The stages a fallback is *meaningful* for. Two are excluded, for related reasons:
+#   embed  — a second encoder answers the query in a different vector space from the one the cached
+#            chunk vectors live in, so every cosine it produced would be arithmetic between
+#            unrelated bases — and a meaningless cosine is still a number between -1 and 1, so
+#            nothing downstream could tell. `src/retrieval.py` skips the dense half instead, which
+#            is a worse ranking rather than a wrong one.
+#   vision — its one arm is *already* the local ollama VLM (FIXR-005: NIM retired every
+#            Nemotron-Nano-VL), so there is nowhere further to fall back to. When the daemon is down
+#            or the model is not pulled the ingest layer stands in a labelled offline stub, which is
+#            a decision above arms.py, not an arm substitution inside it.
+FALLBACK_STAGES = tuple(s for s in MODEL_STAGES if s not in ("embed", "vision"))
 
 
 # --- the placement ----------------------------------------------------------------------------

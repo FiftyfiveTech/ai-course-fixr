@@ -218,12 +218,35 @@ EMBED_ARMS = (
         alias="minilm", pooling="mean", dim=384, query_prefix=""),
 )
 
-ARMS = {"stt": STT_ARMS, "llm": LLM_ARMS, "tts": TTS_ARMS, "embed": EMBED_ARMS}
+# The vision stage (FIXR-005). Reads a screenshot into text — an on-screen error, a dialog, a
+# terminal — so it becomes an evidence record the same way a typed note or a transcript does.
+#
+# The ticket names nvidia/Nemotron-Nano-VL, but NIM retired every Nemotron-Nano-VL on 2026-08-26
+# (410, end-of-life) — the same purge documented for the LLM arms above — so it cannot be pinned
+# without a paid endpoint, which zero-spend forbids. The stage runs instead on a local ollama VLM,
+# exactly as the LLM stage keeps its local ollama arm: same OpenAI-compatible wire protocol (so the
+# `openai-vision` adapter serves it with no auth header), no key, no network, no spend. Qwen2.5-VL
+# is the smallest capable document-reading VLM with a clean HF repo id that ollama serves; it was
+# verified reading the demo screenshot before it was pinned here.
+#
+# One arm, and no FALLBACKS entry — it is *already* the local arm, so there is nowhere further to
+# fall back to. When the daemon is down or the model is not pulled, the *ingest* layer stands a
+# labelled offline stub in; that is a decision above arms.py, not an arm substitution, so it does
+# not live here. `vision` is a local stage in PIPELINE below for the same reason.
+VISION_ARMS = (
+    Arm(repo_id="hf.co/ggml-org/Qwen2.5-VL-3B-Instruct-GGUF", provider="ollama",
+        provider_model="hf.co/ggml-org/Qwen2.5-VL-3B-Instruct-GGUF:Q4_K_M",
+        backend="openai-vision", alias="qwen2.5-vl", api_base=OLLAMA, local=True),
+)
+
+ARMS = {"stt": STT_ARMS, "llm": LLM_ARMS, "tts": TTS_ARMS, "embed": EMBED_ARMS,
+        "vision": VISION_ARMS}
 STAGE_ENV = {"stt": "VOX_STT_MODEL", "llm": "VOX_LLM_MODEL", "tts": "VOX_TTS_MODEL",
-             "embed": "VOX_EMBED_MODEL"}
+             "embed": "VOX_EMBED_MODEL", "vision": "FIXR_VISION_MODEL"}
 
 DEFAULT_STT, DEFAULT_LLM, DEFAULT_TTS = STT_ARMS[0], LLM_ARMS[0], TTS_ARMS[0]
 DEFAULT_EMBED = EMBED_ARMS[0]
+DEFAULT_VISION = VISION_ARMS[0]
 
 # --- where each stage runs -------------------------------------------------------------------
 # The architecture, written down as something that can fail a test. Until this table existed the
@@ -237,7 +260,10 @@ DEFAULT_EMBED = EMBED_ARMS[0]
 #   tts   local — no key, no quota, and the arm is already good enough to ship
 #   embed local — once per chunk at index time and once per turn at query time; and the corpus is
 #         internal policy, so vectorising it remotely would be the disclosure the gitignore avoids
-PIPELINE = {"vad": "local", "stt": "remote", "llm": "remote", "tts": "local", "embed": "local"}
+#   vision local — no free hosted Nemotron-Nano-VL survives NIM's 2026-08-26 purge, so the arm is a
+#         local ollama VLM; it runs on the daemon on this machine, no key and no network
+PIPELINE = {"vad": "local", "stt": "remote", "llm": "remote", "tts": "local", "embed": "local",
+            "vision": "local"}
 
 # Where a stage goes when its arm fails in a way another arm could survive. Every value must name
 # a *local* arm on the same stage; tests/unit/test_fallback.py asserts exactly that, because a
