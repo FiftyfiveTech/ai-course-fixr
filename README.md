@@ -1,40 +1,49 @@
-# ai-course-template
+# ai-course-fixr — ROLE (Track 4)
 
-Starting scaffold for the FiftyFive AI engineering course. One repo per track, grown phase by
-phase by hand.
+Interactive AI roleplay & skills coach. One repo per track, grown phase by phase by hand.
+See `docs/2026-07-28-track4-role-roleplay-coach.md` for the PRD.
 
-## Use it
+## Initial infra (ported from VOX)
+
+Rather than rebuild the plumbing, ROLE starts from `ai-course-vox`'s proven, zero-spend infra
+spine — the model interface, cost/latency logging, free-tier fallback, the voice layer, and hybrid
+retrieval. It is copied in and runs offline out of the box:
 
 ```bash
-gh repo create FiftyfiveTech/ai-course-<track> --template FiftyfiveTech/ai-course-template --public --clone
-cd ai-course-<track>
-make setup
+make setup                                   # uv sync + write .env
+uv run pytest tests --ignore=tests/gates -q  # 411 passed in 14.43s — no network, no key, no mic
 ```
 
-Then, in order: replace `<TRACK>` in `CLAUDE.md` and `pyproject.toml`, protect `main`, add the
-other person as a collaborator with push access.
+What was copied, what runs, and the **keep / adapt / replace** map for each module as ROLE is
+built: `docs/vox-reuse-port-plan.md`. The short version — `config/telemetry/errors/cooldown/arms/
+nlu`, the voice layer, and `sources/retrieval/embeddings` are **keep**; `answer/state/history/
+scorer/confirm` are **adapt**; `loop/harness` and the HR-domain `dates/figures` are **replace or
+prune**. The persona agent, scenario controller, observer/evaluator, and evidence-linked
+scorecards are net-new — VOX has no equivalent.
 
 ## Layout
 
 | Path | Holds |
 |---|---|
-| `src/` | The system. Small modules, one job each. |
+| `src/` | The system. Small modules, one job each. Currently the VOX infra spine (`arms.py` is the one model interface; `telemetry/errors/cooldown`, the `vad/stt/tts/audio` voice layer, and `sources/retrieval/embeddings` retrieval). |
 | `prompts/` | Versioned prompt files (`extract_v1.md`, `extract_v2.md`, …). Never inline a prompt in code. |
 | `schemas/` | Pydantic models. Structured output is validated, not parsed by hand. |
+| `config.yaml` | VAD / barge-in thresholds (the tunables a script measures, kept out of the env). |
 | `evals/dev/` | **Builder** tunes here. 15 cases. |
 | `evals/heldout/` | **Evaluator** only. Sealed Wednesday, tagged `heldout-v1`. The Builder never reads it. |
+| `tests/unit/` | The failure modes as tests — the ported spine's offline suite. `make test`. |
 | `tests/gates/` | One script per phase gate. It prints the number; the number decides. |
+| `docs/` | The PRD and `vox-reuse-port-plan.md` (what was ported and the keep/adapt/replace map). |
 | `STANDUP.md` | Daily log. Two minutes, append-only. |
 
-## Deliberately missing
-
-Two files are absent because they are Week 0 tasks, not scaffolding:
+## Still missing
 
 - `tests/gates/test_no_leakage.py` — asserts `evals/dev ∩ evals/heldout = ∅` by content hash
-  (task **0.7**). Until it exists, the blind-labelling rule is unenforced.
-- `src/telemetry.py` — the shared cost/latency logger every model call goes through (task **0.8**).
+  (task **0.7**). Until it exists, the blind-labelling rule is unenforced. Write it; do not import
+  it from somewhere else.
 
-Write them. Do not import them from somewhere else.
+`src/telemetry.py` (task 0.8) is no longer missing — it was ported in with the VOX infra spine and
+is the logger every model call already goes through. Keep it as-is.
 
 ## Rules that live in this repo
 
