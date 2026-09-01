@@ -122,40 +122,51 @@ STT_ARMS = (
         alias="faster-base", compute_type="int8"),
 )
 
-# Retired 2026-08-27: meta-llama/Llama-3.1-8B-Instruct (the default until then) and
-# meta-llama/Llama-3.1-70B-Instruct, both on NIM. NVIDIA pulled every meta/llama-3.* text-instruct
-# model from the catalogue — neither appears in NIM's /v1/models any more and both answer
-# 410 Gone. That is a 4xx, so `errors.is_transient` correctly refused to fall back and the loop
-# stopped: a model that is gone is a config bug to fix, not a busy provider to route around.
-# The latency numbers those two arms produced are still quoted in docs/learning/ and describe
-# models that no longer exist; re-measuring is a follow-up, not part of this fix.
 LLM_ARMS = (
-    # gpt-oss is a reasoning model, and every chat model Groq's free tier serves is: with the
-    # default effort it spent all 120 tokens thinking and returned an empty reply, measured
-    # 2026-08-18. `reasoning_effort` is therefore not a tuning knob here, it is part of how this
-    # arm has to be called at all — and now that this is the default, of how the stage is called
-    # at all. Promoted from second arm to default because it was the fastest thing still answering
-    # on either free tier when the NIM Llamas went.
+    # 2026-09-01: `meta-llama/Llama-3.1-8B-Instruct` and `-70B-Instruct` were the two arms here and
+    # both are gone — NIM retired them on 2026-08-26 and now answers 410 with an end-of-life date.
+    # A retired model is not a rate limit and not a bug in the request, so it earns its own failure
+    # class (errors.ModelGone) and `scripts/preflight.py` asks both catalogues before a session
+    # starts rather than finding out mid-turn.
+    #
+    # The replacement is the arm that was already here for the provider-swap lesson. gpt-oss is a
+    # reasoning model, and with the default effort it spent all 120 tokens thinking and returned an
+    # empty reply (measured 2026-08-18), so `reasoning_effort` is not a tuning knob on this arm, it
+    # is part of how it has to be called at all. 312-555 ms on two consecutive calls, 29 tokens.
     Arm(repo_id="openai/gpt-oss-120b", provider="groq", provider_model="openai/gpt-oss-120b",
         backend="openai-chat", alias="gpt-oss", api_base=GROQ, key_env="GROQ_API_KEY",
         request={"reasoning_effort": "low"}),
-    # The provider swap, and the size contrast ARCHITECTURE.md open question 1 asks for: the same
-    # weights family 6x smaller, on the other free tier. It replaces both retired NIM arms at once.
-    # Chosen by elimination — most of what NIM still lists 404s on this key, and the one other
-    # model that answered leaked its chain-of-thought into the reply.
-    Arm(repo_id="openai/gpt-oss-20b", provider="nvidia-nim", provider_model="openai/gpt-oss-20b",
-        backend="openai-chat", alias="gpt-oss-20b", api_base=NIM, key_env="NVIDIA_API_KEY",
+    # The same weights on the other free tier, which is why this row exists rather than a different
+    # model on NIM: the arm table's job at this stage is to make one variable movable at a time, and
+    # holding the model fixed makes the provider the only difference between this row and the one
+    # above. 1766 ms and 5801 ms against Groq's 312-555 ms, so this is the slow leg, not a spare
+    # default. It also keeps the stage on two providers — a single-provider stage is what made a
+    # model retirement stop a session instead of costing it one arm.
+    #
+    # `resolve()` refuses a bare `openai/gpt-oss-120b` now that two providers serve it, which is the
+    # behaviour it already documented; name an arm by alias or by `repo_id@provider`.
+    Arm(repo_id="openai/gpt-oss-120b", provider="nvidia-nim",
+        provider_model="openai/gpt-oss-120b", backend="openai-chat", alias="gpt-oss-nim",
+        api_base=NIM, key_env="NVIDIA_API_KEY", request={"reasoning_effort": "low"}),
+    # The fastest arm measured on either free tier — 259 ms and 272 ms, 16 tokens, and no
+    # `reasoning_effort` needed because it does not narrate its thinking into `content` the way
+    # `qwen/qwen3.6-27b` does. Kept as the cross-family contrast the 70B row used to provide.
+    Arm(repo_id="Qwen/Qwen3.8-27B", provider="groq", provider_model="qwen/qwen3.8-27b",
+        backend="openai-chat", alias="qwen3.8", api_base=GROQ, key_env="GROQ_API_KEY"),
+    # The size contrast ARCHITECTURE.md open question 1 asks for, now within one family instead of
+    # across two: same weights lineage as the default, a sixth of the parameters. 302-408 ms — the
+    # 120B is not meaningfully slower on this tier, which is itself the answer to that question.
+    Arm(repo_id="openai/gpt-oss-20b", provider="groq", provider_model="openai/gpt-oss-20b",
+        backend="openai-chat", alias="gpt-oss-20b", api_base=GROQ, key_env="GROQ_API_KEY",
         request={"reasoning_effort": "low"}),
     # The stage's local fallback, and the only local LLM arm. Ollama serves the same
-    # OpenAI-compatible /chat/completions the two hosted arms speak, so it costs no new adapter —
+    # OpenAI-compatible /chat/completions the hosted arms speak, so it costs no new adapter —
     # `openai_chat` just has to stop sending an Authorization header it has no key for.
-    # It shared a weights family with the default when the default was a Llama; it no longer does,
-    # so a fallback reply now changes voice as well as size. Worth a look when the numbers above
-    # are re-measured.
     Arm(repo_id="hf.co/bartowski/Llama-3.2-3B-Instruct-GGUF", provider="ollama",
         provider_model="hf.co/bartowski/Llama-3.2-3B-Instruct-GGUF:Q4_K_M",
         backend="ollama-chat", alias="llama-3.2-3b", api_base=OLLAMA, local=True),
 )
+
 
 TTS_ARMS = (
     Arm(repo_id="hexgrad/Kokoro-82M", provider="local", provider_model="hexgrad/Kokoro-82M",
@@ -372,17 +383,18 @@ CHUNK_OVERLAP_TOKENS = int(os.environ.get("VOX_CHUNK_OVERLAP_TOKENS", "50"))
 # what VOX-031's prompt budget means by it. Splitting on whitespace would have needed no download
 # and would also have made the number a different unit from the one that matters.
 #
-# This was chosen when the default LLM arm was meta-llama/Llama-3.1-8B-Instruct, whose repo is
-# gated: from_pretrained 401s without an HF token, so a clean clone could not build an index. This
-# repo id is a mirror of those same Llama-3.1 tokenizer files (128k vocab, byte-level BPE, verified
-# against unsloth/Meta-Llama-3.1-8B-Instruct on the same string). It is named as an HF repo id like
-# every other model here; it is a tokenizer, so it is never called and costs nothing.
+# The default LLM arm is meta-llama/Llama-3.1-8B-Instruct, whose repo is gated: from_pretrained
+# 401s without an HF token, so a clean clone could not build an index. This repo id is a mirror of
+# those same Llama-3.1 tokenizer files (128k vocab, byte-level BPE, verified against
+# unsloth/Meta-Llama-3.1-8B-Instruct on the same string). It is named as an HF repo id like every
+# other model here; it is a tokenizer, so it is never called and costs nothing.
 #
-# The default arm is now openai/gpt-oss-120b, which tokenizes with o200k_harmony, not this. The
-# Llama tokenizer is kept on purpose: it is what the current index was chunked with, and swapping
-# it would silently re-cut every chunk boundary and invalidate the built index. So "300 tokens"
-# is now an approximation of the reading model's budget rather than the same unit. Correcting that
-# means a re-chunk and a re-measure, which is its own ticket.
+# 2026-09-01, left deliberately unchanged when the default LLM arm moved off Llama-3.1: this is now
+# the tokenizer of a model nothing calls, so "300 tokens" no longer means 300 gpt-oss tokens. Not
+# repointed here, because CHUNK_TOKENS and both retrieval floors were measured on chunks cut with
+# these 128k-vocab boundaries, and swapping the tokenizer re-cuts every chunk — which moves the
+# floors without anyone re-measuring them. Re-cutting the corpus is its own ticket with its own
+# `make floors` run, not a side effect of repairing the arm table.
 TOKENIZER_REPO = os.environ.get("VOX_TOKENIZER_REPO", "NousResearch/Meta-Llama-3.1-8B-Instruct")
 
 # --- retrieval (VOX-030) -----------------------------------------------------------------------
