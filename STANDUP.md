@@ -14,3 +14,13 @@ Next:     the single next task id
 
 Rule: a number goes in this file only if it appeared in your terminal. No number is better than a
 remembered one.
+
+## 2026-09-01 — Vimal (Builder)
+Did:      ported the VOX infra spine into ROLE — src/ (arms, telemetry, errors, cooldown, the
+          vad/stt/tts/audio voice layer, sources/retrieval/embeddings), schemas/turn_state, 15
+          prompts, config.yaml, and the offline unit suite. Wired pyproject to VOX's deps + py3.12.
+          Dropped test_compare/test_rehearsal (they load VOX driver scripts not carried over).
+          Wrote docs/vox-reuse-port-plan.md (keep/adapt/replace map) and updated the README.
+Number:   411 passed in 14.43s — `uv run pytest tests --ignore=tests/gates -q` (offline)
+Blocked:  nothing. Not board-ticketed — ROLE is still backlog; this is a working-tree baseline.
+Next:     await a ROLE ticket, or start src/session.py + a persona prompt for Phase 0.
