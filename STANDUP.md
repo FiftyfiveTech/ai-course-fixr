@@ -24,3 +24,13 @@ Did:      ported the VOX infra spine into ROLE — src/ (arms, telemetry, errors
 Number:   411 passed in 14.43s — `uv run pytest tests --ignore=tests/gates -q` (offline)
 Blocked:  nothing. Not board-ticketed — ROLE is still backlog; this is a working-tree baseline.
 Next:     await a ROLE ticket, or start src/session.py + a persona prompt for Phase 0.
+
+## 2026-09-02 — Vimal (Builder)
+Did:      FIXR-021 — schemas/diagnostic.py: Hypothesis (carries confidence 0..1 + supported_by
+          evidence ids) and DiagnosticReport, which composes EvidenceRecord (schemas/evidence.py,
+          reused not re-declared) with Hypothesis. The evidence/hypothesis confidence boundary is
+          now structural. Test tests/unit/test_diagnostic_schema.py proves it.
+Number:   5 passed in 0.13s — `pytest tests/unit/test_diagnostic_schema.py -v`; "confidence" in
+          EvidenceRecord.model_fields == False, in Hypothesis == True
+Blocked:  nothing
+Next:     FIXR-022
