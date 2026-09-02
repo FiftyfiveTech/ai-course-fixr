@@ -91,6 +91,17 @@ def _stub(kind: str, source: str, raw: bytes, arm) -> str:
             f"{kind} input {source!r} ({len(raw)} bytes); extracted text unavailable offline.")
 
 
+def _vision_suppressed(source: str, raw: bytes) -> str:
+    """The text-only arm's placeholder for a screenshot it deliberately did not read (FIXR-008).
+
+    Shaped like `_stub` and just as deterministic, but it is *not* a stub: nothing failed and
+    nothing was missing. This arm chose not to look, so the gap between it and the vision arm is a
+    measurement — the vision contribution — and never a degradation to apologise for.
+    """
+    return (f"[text-only arm] vision suppressed — screenshot {source!r} ({len(raw)} bytes) "
+            f"received but not read. Run the vision arm to include on-screen text.")
+
+
 def ingest_text(text: str, *, source: str = "text:inline") -> EvidenceRecord:
     """A typed note or a pasted log line -> an evidence record. No model call: the text is the text.
 
@@ -137,14 +148,25 @@ def ingest_audio(path, *, turn_id, model_id=None) -> EvidenceRecord:
                                 source=str(path), origin="offline-stub", live=False)
 
 
-def ingest_screenshot(path, *, turn_id, model_id=None) -> EvidenceRecord:
+def ingest_screenshot(path, *, turn_id, model_id=None, read=True) -> EvidenceRecord:
     """A screenshot -> an evidence record, read by the vision arm (Nemotron-Nano-VL).
 
     The id is over the RAW image file bytes. When NVIDIA_API_KEY is absent the content is the
     offline stub and `live` is False; the id is unchanged either way.
+
+    `read` is the FIXR-008 ablation switch. Its default (True) is the full multimodal path: the
+    screenshot is read into text by the vision arm. `read=False` is the text-only arm — the
+    screenshot is still received and still gets its stable, content-addressed id, but the VLM is
+    never called (this arm needs no vision model, no daemon, no key), and the content is a labelled
+    'vision suppressed' placeholder. Because the id is over the raw image bytes, both arms mint the
+    *same* id for the same screenshot, so a case run through each lines up record-for-record and the
+    only thing that changed is whether the pixels were read.
     """
     path = Path(path)
     raw = path.read_bytes()
+    if not read:
+        return EvidenceRecord.build("screenshot", raw, content=_vision_suppressed(str(path), raw),
+                                    source=str(path), origin="text-only-arm", live=False)
     arm = resolve("vision", model_id)
     if _live(arm):
         prompt = nlu.load_prompt(SCREENSHOT_PROMPT)

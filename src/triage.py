@@ -19,14 +19,36 @@ import sys
 
 from src import config, ingest, telemetry
 
+# The diagnostic arms (FIXR-008). Both answer the same case through the same run(); they differ in
+# exactly one leg — whether a screenshot is read by the vision VLM — so the difference between their
+# answers is the vision contribution and nothing else.
+#
+#   vision      the full multimodal path (FIXR-005): a screenshot is read into text by the VLM.
+#   text-only   the ablation, and the local fallback arm: the screenshot is received and gets its
+#               stable evidence id, but the VLM is never called and its content is a labelled
+#               'vision suppressed' placeholder. Text and audio are untouched — audio is
+#               speech-to-TEXT, not vision — so the only variable removed is the read of the pixels.
+#
+# 'local' in the ticket names what this arm needs: no vision model, no ollama daemon, no NIM key. It
+# is the leg that always runs, and the baseline every vision number is measured against.
+ARMS = ("vision", "text-only")
+DEFAULT_ARM = "vision"
 
-def run(*, text=None, text_source="text:inline", audio=None, screenshot=None, stt_model=None,
-        vision_model=None, turn_id=None):
+
+def run(*, text=None, text_source="text:inline", audio=None, screenshot=None, arm=DEFAULT_ARM,
+        stt_model=None, vision_model=None, turn_id=None):
     """-> the response dict for the given inputs. The one place the three paths are collected.
 
-    Records come out in a fixed order — text, audio, screenshot — so two runs of the same inputs
-    produce byte-identical JSON, which is what lets the gate compare output rather than eyeball it.
+    `arm` selects a diagnostic arm (see ARMS). It is recorded in the response and changes exactly
+    one thing: the text-only arm suppresses the screenshot read so the vision contribution can be
+    isolated by diffing the two arms' answers on the same case.
+
+    Records come out in a fixed order — text, audio, screenshot — so two runs of the same inputs and
+    arm produce byte-identical JSON, which is what lets the gate compare output rather than eyeball
+    it.
     """
+    if arm not in ARMS:
+        raise ValueError(f"unknown triage arm {arm!r} — expected one of {ARMS}")
     turn_id = turn_id or telemetry.new_turn_id()
     records = []
     if text is not None:
@@ -35,18 +57,20 @@ def run(*, text=None, text_source="text:inline", audio=None, screenshot=None, st
         records.append(ingest.ingest_audio(audio, turn_id=turn_id, model_id=stt_model))
     if screenshot is not None:
         records.append(ingest.ingest_screenshot(screenshot, turn_id=turn_id,
-                                                 model_id=vision_model))
+                                                 model_id=vision_model, read=(arm == "vision")))
     return {
         "turn_id": turn_id,
+        "arm": arm,
         "evidence": [r.model_dump() for r in records],
         "evidence_ids": [r.id for r in records],
     }
 
 
 def _summary_line(record):
-    """One human-readable line for stderr. `live` vs the offline stub is the fact worth surfacing."""
-    how = record["origin"] if record["live"] else "OFFLINE STUB"
-    return f"  {record['kind']:<10} {record['id']}  ({how})"
+    """One human-readable line for stderr. The origin (which arm produced the content) plus a flag
+    when nothing live did — an offline stub or a suppressed read — is the fact worth surfacing."""
+    flag = "" if record["live"] else "  [not live]"
+    return f"  {record['kind']:<10} {record['id']}  ({record['origin']}){flag}"
 
 
 def main(argv=None):
@@ -59,6 +83,10 @@ def main(argv=None):
                         help="read the text input from a file (e.g. a saved log) instead of --text")
     parser.add_argument("--audio", metavar="PATH", help="an audio file to transcribe (whisper)")
     parser.add_argument("--screenshot", metavar="PATH", help="a screenshot to read (vision VLM)")
+    parser.add_argument("--arm", choices=ARMS, default=DEFAULT_ARM,
+                        help="which diagnostic arm answers the case; default %(default)s. "
+                             "'vision' reads screenshots with the VLM; 'text-only' suppresses that "
+                             "read to isolate the vision contribution (FIXR-008)")
     parser.add_argument("--stt", metavar="MODEL_ID", default=None,
                         help=f"STT arm; default {config.DEFAULT_STT.repo_id}")
     parser.add_argument("--vision", metavar="MODEL_ID", default=None,
@@ -77,10 +105,11 @@ def main(argv=None):
         parser.error("give at least one of --text / --text-file / --audio / --screenshot")
 
     response = run(text=text, text_source=text_source, audio=args.audio,
-                   screenshot=args.screenshot, stt_model=args.stt, vision_model=args.vision)
+                   screenshot=args.screenshot, arm=args.arm, stt_model=args.stt,
+                   vision_model=args.vision)
 
-    print(f"triage {response['turn_id']} — {len(response['evidence'])} evidence record(s):",
-          file=sys.stderr)
+    print(f"triage {response['turn_id']} [{response['arm']} arm] — "
+          f"{len(response['evidence'])} evidence record(s):", file=sys.stderr)
     for record in response["evidence"]:
         print(_summary_line(record), file=sys.stderr)
     print(f"  evidence_ids used: {response['evidence_ids']}", file=sys.stderr)
