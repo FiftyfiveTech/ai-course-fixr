@@ -97,7 +97,15 @@ def ingest_text(text: str, *, source: str = "text:inline") -> EvidenceRecord:
     The id is over the UTF-8 bytes of the text, so the same note pasted twice is one piece of
     evidence. `origin` is `text:verbatim` and `live` is True — nothing was inferred, the content is
     exactly what came in.
+
+    Raises:
+        ValueError: if `text` is empty or whitespace-only — an empty log is not observable evidence.
     """
+    if not text.strip():
+        raise ValueError(
+            f"ingest_text: text is empty — an empty log carries no observable evidence "
+            f"(source={source!r}). Provide a non-empty note or log excerpt."
+        )
     raw = text.encode("utf-8")
     return EvidenceRecord.build("text", raw, content=text, source=source,
                                 origin="text:verbatim", live=True)
@@ -125,12 +133,22 @@ def ingest_audio(path, *, turn_id, model_id=None) -> EvidenceRecord:
     The id is over the RAW audio file bytes, so re-transcribing the same recording — which whisper
     does not do bit-for-bit — is still one piece of evidence. When GROQ_API_KEY is absent the
     transcript is the offline stub and `live` is False; the id is unchanged either way.
+
+    Raises:
+        ValueError: if the STT arm returns an empty transcript — silent or noise-only audio is
+            not evidence. The caller must provide audio that contains speech.
     """
     path = Path(path)
     raw = path.read_bytes()
     arm = resolve("stt", model_id)
     if _live(arm):
         transcript = arms.stt(_decode_audio(path), model_id, turn_id=turn_id)
+        if not transcript.strip():
+            raise ValueError(
+                f"ingest_audio: {arm.id} returned an empty transcript for {str(path)!r}. "
+                f"The file may be silent, too short, or contain only noise. "
+                f"Provide audio that contains speech."
+            )
         return EvidenceRecord.build("audio", raw, content=transcript, source=str(path),
                                     origin=arm.id, live=True)
     return EvidenceRecord.build("audio", raw, content=_stub("audio", str(path), raw, arm),
@@ -142,13 +160,24 @@ def ingest_screenshot(path, *, turn_id, model_id=None) -> EvidenceRecord:
 
     The id is over the RAW image file bytes. When NVIDIA_API_KEY is absent the content is the
     offline stub and `live` is False; the id is unchanged either way.
+
+    Raises:
+        ValueError: if the file's bytes are not a recognisable image format (no magic bytes match
+            and no known extension). A corrupt or truncated file must not silently reach the model.
     """
     path = Path(path)
     raw = path.read_bytes()
+    media = _media_type(path, raw)
+    if media == "application/octet-stream":
+        raise ValueError(
+            f"ingest_screenshot: {path} is not a recognisable image format "
+            f"(first 8 bytes: {raw[:8]!r}). "
+            f"Provide a PNG, JPEG, WebP, GIF, or BMP file."
+        )
     arm = resolve("vision", model_id)
     if _live(arm):
         prompt = nlu.load_prompt(SCREENSHOT_PROMPT)
-        text = arms.vision(raw, _media_type(path, raw), prompt, model_id, turn_id=turn_id)
+        text = arms.vision(raw, media, prompt, model_id, turn_id=turn_id)
         return EvidenceRecord.build("screenshot", raw, content=text, source=str(path),
                                     origin=arm.id, live=True)
     return EvidenceRecord.build("screenshot", raw, content=_stub("screenshot", str(path), raw, arm),
