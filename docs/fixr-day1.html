@@ -1,0 +1,381 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>FIXR Day 1 — Multimodal Evidence & the Evidence ID</title>
+  <style>
+    :root {
+      --bg: #0f1117;
+      --surface: #1a1d27;
+      --border: #2a2d3e;
+      --text: #e2e4ed;
+      --muted: #8b8fa8;
+      --accent: #7c6af7;
+      --accent2: #4fc3f7;
+      --green: #4caf7d;
+      --yellow: #f7c948;
+      --red: #f76c6c;
+      --code-bg: #13151f;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: 'Segoe UI', system-ui, sans-serif;
+      font-size: 15px;
+      line-height: 1.7;
+      padding: 0 1rem 4rem;
+    }
+    header {
+      background: var(--surface);
+      border-bottom: 1px solid var(--border);
+      padding: 1.2rem 2rem;
+      display: flex;
+      align-items: center;
+      gap: 1rem;
+      position: sticky;
+      top: 0;
+      z-index: 10;
+    }
+    header .badge {
+      background: var(--accent);
+      color: #fff;
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: .05em;
+      padding: 2px 8px;
+      border-radius: 4px;
+    }
+    header h1 { font-size: 1rem; font-weight: 600; color: var(--text); }
+    header span { color: var(--muted); font-size: .85rem; }
+
+    .layout { max-width: 860px; margin: 0 auto; padding-top: 2.5rem; }
+
+    h2 {
+      font-size: 1.15rem;
+      font-weight: 700;
+      color: var(--accent2);
+      margin: 2.5rem 0 .8rem;
+      padding-bottom: .4rem;
+      border-bottom: 1px solid var(--border);
+    }
+    h3 {
+      font-size: .95rem;
+      font-weight: 600;
+      color: var(--text);
+      margin: 1.5rem 0 .5rem;
+    }
+    p { margin-bottom: .9rem; }
+
+    pre {
+      background: var(--code-bg);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 1rem 1.2rem;
+      overflow-x: auto;
+      font-family: 'Cascadia Code', 'Fira Code', monospace;
+      font-size: 13px;
+      line-height: 1.55;
+      color: #c9d1d9;
+      margin: .8rem 0 1rem;
+    }
+    code {
+      background: var(--code-bg);
+      border: 1px solid var(--border);
+      border-radius: 3px;
+      padding: 1px 5px;
+      font-family: 'Cascadia Code', 'Fira Code', monospace;
+      font-size: 13px;
+      color: #c9d1d9;
+    }
+    pre code { background: none; border: none; padding: 0; }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin: .8rem 0 1.2rem;
+      font-size: 14px;
+    }
+    th {
+      background: var(--surface);
+      color: var(--muted);
+      font-weight: 600;
+      text-align: left;
+      padding: .5rem .8rem;
+      border: 1px solid var(--border);
+      font-size: 12px;
+      text-transform: uppercase;
+      letter-spacing: .05em;
+    }
+    td {
+      padding: .5rem .8rem;
+      border: 1px solid var(--border);
+      vertical-align: top;
+    }
+    tr:nth-child(even) td { background: rgba(255,255,255,.02); }
+
+    .callout {
+      border-left: 3px solid var(--accent);
+      background: rgba(124,106,247,.08);
+      border-radius: 0 6px 6px 0;
+      padding: .8rem 1.1rem;
+      margin: 1rem 0;
+      font-size: 14px;
+    }
+    .callout.warn {
+      border-color: var(--yellow);
+      background: rgba(247,201,72,.07);
+    }
+    .callout.danger {
+      border-color: var(--red);
+      background: rgba(247,108,108,.07);
+    }
+    .callout.ok {
+      border-color: var(--green);
+      background: rgba(76,175,125,.07);
+    }
+
+    .pill {
+      display: inline-block;
+      padding: 2px 10px;
+      border-radius: 99px;
+      font-size: 12px;
+      font-weight: 700;
+      margin-right: 4px;
+    }
+    .pill.resolve { background: rgba(76,175,125,.2); color: var(--green); }
+    .pill.escalate { background: rgba(247,108,108,.2); color: var(--red); }
+    .pill.abstain { background: rgba(247,201,72,.2); color: var(--yellow); }
+
+    .phase-table td:first-child { font-family: monospace; color: var(--accent2); }
+    .phase-table td:last-child { color: var(--muted); font-size: 13px; }
+
+    .meter-line {
+      background: var(--code-bg);
+      border: 1px solid var(--green);
+      border-radius: 6px;
+      padding: .8rem 1.2rem;
+      font-family: monospace;
+      font-size: 13px;
+      color: var(--green);
+      margin: .8rem 0;
+    }
+
+    footer {
+      margin-top: 4rem;
+      padding-top: 1.5rem;
+      border-top: 1px solid var(--border);
+      color: var(--muted);
+      font-size: 12px;
+    }
+  </style>
+</head>
+<body>
+
+<header>
+  <span class="badge">FIXR</span>
+  <h1>Day 1 Concept Primer</h1>
+  <span>Multimodal Evidence &amp; Why the Evidence ID Is the Whole Trick</span>
+</header>
+
+<div class="layout">
+
+  <h2>1. The Problem FIXR Solves</h2>
+  <p>A field engineer submits a support ticket. It might arrive as a <strong>text</strong> message,
+  an <strong>audio</strong> memo recorded on site, or a <strong>screenshot</strong> of the error state.</p>
+  <p>FIXR's job is to triage it — resolve, escalate, or abstain — regardless of modality,
+  and to <strong>show its work</strong>.</p>
+  <div class="callout danger">
+    A triage system that says ESCALATE without citing what it saw is not a system — it is a guess wearing a UI.
+  </div>
+
+  <h2>2. What Is Evidence?</h2>
+  <p>Evidence is any raw artefact the system receives. It is <strong>observed, not inferred</strong>,
+  <strong>immutable</strong> after it arrives, and <strong>citable</strong> — every piece gets a stable ID before any model touches it.</p>
+  <p>A model's interpretation (root cause, severity, disposition) is a <strong>hypothesis</strong>, not evidence.</p>
+<pre>artefact (text | audio | image)
+    │
+    ▼
+ ingestion                 ← evidence lives here
+    │  eid minted
+    │  raw bytes stored
+    ▼
+ normalised text + eid[]   ← hypothesis lives below this line
+    │
+    ▼
+ triage model
+    │
+    ▼
+ disposition + evidence_ids cited</pre>
+
+  <h2>3. Why the Evidence ID Is the Whole Trick</h2>
+  <p>An <strong>evidence ID</strong> (<code>eid</code>) is a stable, content-addressed identifier:</p>
+<pre>eid = sha256(raw_bytes)[:16]</pre>
+  <p>It is minted <strong>once</strong>, at ingestion, <strong>before</strong> any model call. It never changes.</p>
+
+  <table>
+    <tr><th>Without eid</th><th>With eid</th></tr>
+    <tr>
+      <td>"The model said ESCALATE"</td>
+      <td>"The model cited eid-a3f2 (screenshot) and eid-7b1c (log excerpt)"</td>
+    </tr>
+    <tr>
+      <td>No way to replay the decision</td>
+      <td>Replay by re-fetching the same raw artefacts</td>
+    </tr>
+    <tr>
+      <td>Prompt injection hides in content</td>
+      <td>A dangling eid (cited but never minted) is a detectable defect</td>
+    </tr>
+    <tr>
+      <td>PII might linger undetected</td>
+      <td>Every eid has a known artefact type; image eids get a PII check</td>
+    </tr>
+  </table>
+
+  <h3>The Dangling EID Rule</h3>
+  <div class="callout danger">
+    A <strong>dangling eid</strong> is one that appears in a model response but was never minted in the current request.
+    It means the model invented a source. This is not a hallucination to tolerate —
+    it is a defect caught by <code>src/validators/provenance.py</code>.
+  </div>
+  <p><strong>One eid = one artefact. One artefact = one eid. No exceptions.</strong></p>
+
+  <h2>4. The Three Input Paths</h2>
+  <p>All three paths converge on a normalised text string before the triage model sees anything.
+  The eid travels alongside it.</p>
+
+  <h3>Path 1 — Text</h3>
+<pre>user message (UTF-8)
+    │
+    ├── eid = sha256(message.encode())[:16]
+    └── normalised_text = message          → triage</pre>
+  <p>Preprocessing: none. The message is the evidence.</p>
+
+  <h3>Path 2 — Audio</h3>
+<pre>audio file (mp3 / wav / m4a)
+    │
+    ├── eid = sha256(audio_bytes)[:16]
+    ├── transcribe via openai/whisper-large-v3-turbo (Groq free tier)
+    └── normalised_text = transcript       → triage</pre>
+  <div class="callout">
+    The eid is on the <strong>audio bytes</strong>, not the transcript. If the transcript changes
+    (different model, different language), the eid does not — because the evidence is what was recorded.
+  </div>
+
+  <h3>Path 3 — Image / Screenshot</h3>
+<pre>screenshot (JPEG / PNG)
+    │
+    ├── eid = sha256(image_bytes)[:16]
+    ├── PII check — STOP if unredacted PII detected
+    ├── caption via NVIDIA NIM vision model
+    └── normalised_text = caption          → triage</pre>
+  <div class="callout warn">
+    The PII check runs <strong>before anything else</strong>.
+    An unredacted screenshot never reaches the model.
+  </div>
+
+  <h2>5. Evidence vs Hypothesis — The Hard Boundary</h2>
+<pre>┌─────────────────────────────┐
+│         EVIDENCE            │
+│  eid · raw bytes · timestamp│   ← deterministic, immutable, logged at ingestion
+│  normalised text            │
+└────────────┬────────────────┘
+             │  (only this crosses the boundary)
+             ▼
+┌─────────────────────────────┐
+│         HYPOTHESIS          │
+│  classification             │   ← probabilistic, model-generated
+│  root cause                 │
+│  severity                   │
+│  disposition                │
+│  evidence_ids cited         │   ← must be subset of eids in this request
+└─────────────────────────────┘</pre>
+
+  <p>Rules enforced in code:</p>
+  <ol style="padding-left:1.4rem;margin-bottom:.9rem">
+    <li>The triage prompt receives normalised text + eid list — never a prior model output.</li>
+    <li>The structured output schema has separate <code>evidence_ids</code> and <code>hypothesis</code> fields — they cannot be mixed.</li>
+    <li><code>src/validators/provenance.py</code> rejects any response citing an eid not in the request.</li>
+    <li><code>src/validators/pii.py</code> rejects any image artefact with unredacted PII before it reaches disk.</li>
+  </ol>
+
+  <h2>6. Dispositions</h2>
+  <table>
+    <tr><th>Disposition</th><th>Meaning</th><th>When</th></tr>
+    <tr>
+      <td><span class="pill resolve">RESOLVE</span></td>
+      <td>System handles it</td>
+      <td>Clear evidence, confidence above threshold, no escalation signal</td>
+    </tr>
+    <tr>
+      <td><span class="pill escalate">ESCALATE</span></td>
+      <td>Hand to a human</td>
+      <td>Any mandatory-escalation signal present</td>
+    </tr>
+    <tr>
+      <td><span class="pill abstain">ABSTAIN</span></td>
+      <td>System refuses to act</td>
+      <td>Evidence insufficient or contradictory</td>
+    </tr>
+  </table>
+
+  <h3>Mandatory-escalation signals (any one → ESCALATE)</h3>
+  <ul style="padding-left:1.4rem;margin-bottom:.9rem">
+    <li>Safety risk to a person</li>
+    <li>PII / data-breach indicator</li>
+    <li>Compliance keyword (configurable list)</li>
+    <li>Model confidence below threshold</li>
+    <li>Prompt-injection attempt detected by <code>Llama-Prompt-Guard-2-86M</code></li>
+  </ul>
+
+  <h3>Must-abstain signals (any one → ABSTAIN)</h3>
+  <ul style="padding-left:1.4rem;margin-bottom:.9rem">
+    <li>All cited eids are dangling</li>
+    <li>Contradictory evidence, no resolvable majority</li>
+    <li>Out-of-scope domain</li>
+  </ul>
+
+  <h2>7. The Cost Contract</h2>
+  <p>Every model call goes through <code>src/telemetry.py</code>. Every incident ends with one line:</p>
+  <div class="meter-line">
+    [METER] incident=&lt;eid&gt; wall_ms=&lt;n&gt; cost_usd=0.00 ×realtime=&lt;n&gt;x
+  </div>
+  <ul style="padding-left:1.4rem;margin-bottom:.9rem">
+    <li><code>cost_usd</code> is always <code>0.00</code> — zero spend is a hard constraint. Non-zero means stop and ask.</li>
+    <li><code>×realtime</code> = wall clock ÷ audio duration (audio only). Null for text and image.</li>
+    <li>Wall clock wraps the <strong>full incident</strong> — not just token counts.</li>
+  </ul>
+
+  <h2>8. Key Vocabulary</h2>
+  <table>
+    <tr><th>Term</th><th>Definition</th></tr>
+    <tr><td><code>eid</code></td><td>Content-addressed evidence ID: <code>sha256(raw_bytes)[:16]</code></td></tr>
+    <tr><td>Evidence</td><td>Raw artefact + eid + timestamp. Observed, not inferred.</td></tr>
+    <tr><td>Hypothesis</td><td>Model output: classification, root cause, disposition, cited eids</td></tr>
+    <tr><td>Dangling eid</td><td>An eid cited in a response that was never minted — always a defect</td></tr>
+    <tr><td><code>×realtime</code></td><td><code>wall_ms / (audio_s × 1000)</code> — how many times longer than the audio the system took</td></tr>
+    <tr><td>Mandatory-escalation</td><td>A signal that forces ESCALATE regardless of confidence</td></tr>
+    <tr><td>Must-abstain</td><td>A condition where ABSTAIN is the only valid disposition</td></tr>
+  </table>
+
+  <h2>9. Phase 0 Checklist</h2>
+  <table class="phase-table">
+    <tr><th>Task</th><th>Done when</th></tr>
+    <tr><td>FIXR-001</td><td><code>make doctor</code> passes — all credentials and tools present</td></tr>
+    <tr><td>FIXR-003</td><td><code>ARCHITECTURE.md</code> signed off by all four</td></tr>
+    <tr><td>FIXR-004</td><td>40 cases committed with provenance; dev ∩ heldout = ∅</td></tr>
+    <tr><td>FIXR-005</td><td>One path handles text, audio, image; every response records eids</td></tr>
+    <tr><td>FIXR-006</td><td>Every run ends with one <code>[METER]</code> line</td></tr>
+    <tr><td>FIXR-007</td><td><code>make coach</code> serves this page ✓</td></tr>
+    <tr><td>FIXR-010</td><td>GATE: all three paths work; every response records the eids it used</td></tr>
+  </table>
+
+  <footer>
+    FIXR — AI Engineering Course · Phase 0 · Generated by <code>make coach</code>
+  </footer>
+
+</div>
+</body>
+</html>
