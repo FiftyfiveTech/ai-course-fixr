@@ -273,3 +273,83 @@ def turn_timer(turn_id, source="mic"):
         raise
     finally:
         t.write()
+
+
+# ---------------------------------------------------------------------------
+# FIXR — incident-level cost meter (FIXR-006)
+#
+# An "incident" is one triage request: text, audio, or image → disposition.
+# The meter wraps the whole request, not just the model calls inside it.
+# Wall clock is the number that matters: it includes network round-trips,
+# encoding, parsing, and every gap between model calls that token counts miss.
+#
+# Done when: every run ends with exactly one printed line of this form:
+#
+#   [METER] incident=<id> wall_ms=<n> cost_usd=0.00 ×realtime=<n>x
+#
+# ×realtime = wall_ms / (audio_duration_s * 1000).
+# For text and image inputs it is null — there is no natural duration to
+# divide by, and null is more honest than a wall-clock-over-1s fiction.
+# ---------------------------------------------------------------------------
+
+INCIDENTS_LOG = RUNS_DIR / "incidents.jsonl"
+
+
+@contextmanager
+def incident_meter(incident_id: str, modality: str, audio_s: float | None = None):
+    """Time one FIXR triage incident and print the cost/latency summary line.
+
+    Args:
+        incident_id: stable id for this incident (e.g. an evidence eid or uuid hex)
+        modality:    "text" | "audio" | "image"
+        audio_s:     duration of the audio artefact in seconds (audio modality only).
+                     Pass None for text and image — ×realtime will be logged as null.
+
+    Yields a dict the caller can add facts to (e.g. disposition, evidence_ids).
+    The summary line is printed and written to runs/incidents.jsonl on exit,
+    even when the incident raises — a failed triage still has a wall clock.
+
+    Usage::
+
+        with incident_meter(eid, "audio", audio_s=12.3) as inc:
+            inc["disposition"] = triage(evidence)
+    """
+    record: dict = {
+        "ts": time.strftime("%Y-%m-%dT%H:%M:%S"),
+        "incident_id": incident_id,
+        "modality": modality,
+        "audio_s": audio_s,
+        "cost_usd": 0.0,          # always 0.00 — free-tier only; non-zero is a STOP
+    }
+    t0 = time.perf_counter()
+    try:
+        yield record
+        record["ok"] = True
+    except Exception as e:
+        record["ok"] = False
+        record["error"] = f"{type(e).__name__}: {e}"
+        raise
+    finally:
+        wall_ms = round((time.perf_counter() - t0) * 1000, 1)
+        record["wall_ms"] = wall_ms
+
+        xrt: float | None = None
+        if audio_s and audio_s > 0:
+            xrt = round(wall_ms / (audio_s * 1000), 3)
+        record["x_realtime"] = xrt
+
+        _append(record, INCIDENTS_LOG)
+        _print_meter_line(record)
+
+
+def _print_meter_line(r: dict) -> None:
+    """Print the single summary line every incident run must end with."""
+    xrt = f"{r['x_realtime']}x" if r["x_realtime"] is not None else "null"
+    status = "" if r.get("ok", True) else f" ERROR={r.get('error', '?')!r}"
+    print(
+        f"[METER] incident={r['incident_id']}"
+        f" wall_ms={r['wall_ms']}"
+        f" cost_usd={r['cost_usd']:.2f}"
+        f" ×realtime={xrt}"
+        f"{status}"
+    )
