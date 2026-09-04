@@ -24,13 +24,20 @@ from src import config, ingest, log_parser, telemetry
 
 
 def run(*, text=None, text_source="text:inline", audio=None, screenshot=None, log=None,
-        log_source="log:inline", stt_model=None, vision_model=None, turn_id=None):
+        log_source="log:inline", stt_model=None, vision_model=None,
+        llm_model=None, safeguard_model=None, turn_id=None):
     """-> the response dict for the given inputs. The one place all paths are collected.
 
     Records come out in a fixed order — text, log lines, audio, screenshot — so two runs of the
     same inputs produce byte-identical JSON, which is what lets the gate compare output rather than
     eyeball it.  A log produces one record per non-blank line; all other inputs produce one record.
+
+    After ingestion, triage_engine.classify() classifies the evidence (FIXR-022). The result is
+    included in the response as `triage_result`. If the LLM is unavailable (offline, no key),
+    the field is a dict with an "error" key and the response still carries the evidence_ids.
     """
+    from src import triage_engine
+
     turn_id = turn_id or telemetry.new_turn_id()
     records = []
     if text is not None:
@@ -42,10 +49,22 @@ def run(*, text=None, text_source="text:inline", audio=None, screenshot=None, lo
     if screenshot is not None:
         records.append(ingest.ingest_screenshot(screenshot, turn_id=turn_id,
                                                  model_id=vision_model))
+
+    triage_result = None
+    if records:
+        try:
+            triage_result = triage_engine.classify(
+                records, turn_id=turn_id,
+                model_id=llm_model, safeguard_model=safeguard_model,
+            ).model_dump()
+        except Exception as exc:
+            triage_result = {"error": str(exc)}
+
     return {
         "turn_id": turn_id,
         "evidence": [r.model_dump() for r in records],
         "evidence_ids": [r.id for r in records],
+        "triage_result": triage_result,
     }
 
 

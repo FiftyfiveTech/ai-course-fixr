@@ -28,6 +28,7 @@ dependencies = [
     "torchvision>=0.28.0",
     "verovio>=6.3.0",
     "tiktoken>=0.14.0",
+    "instructor>=1.16.0",
 ]
 
 [dependency-groups]
