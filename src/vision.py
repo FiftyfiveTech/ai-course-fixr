@@ -5,14 +5,21 @@ Nothing here resolves an arm, logs a call, or knows which arm is the default —
 all three, exactly as it does for `stt` and `llm`. A backend takes the arm it was told to run, the
 payload, and the mutable call record it adds its measured facts to.
 
-The one adapter is the same OpenAI-compatible /chat/completions the LLM arms speak, with one
-difference: the user message carries an image. The VLM endpoint takes the image inline as a `data:`
-URI in an `image_url` content part, so the screenshot never touches disk and no file is uploaded —
-the bytes go straight into the request body, base64-encoded. It serves a hosted VLM and a local
-ollama one identically: `arm.auth_headers` simply omits the Authorization header for the keyless
-local arm, the same way `openai_chat` serves both the Groq and ollama LLM arms.
+Two backends:
+
+  openai-vision   OpenAI-compatible /chat/completions with an inline base64 image — serves the
+                  local ollama VLM (Qwen2.5-VL) with no auth header, the same wire protocol the LLM
+                  stage already speaks.
+
+  got-ocr2        In-process transformers inference for stepfun-ai/GOT-OCR2_0. OCR-focused rather
+                  than generalist-VLM; takes the raw screenshot bytes and returns the extracted text.
+                  The prompt is ignored — GOT-OCR2 always performs plain text OCR; there is no
+                  system-prompt slot. Weights are loaded once via the LOADERS entry and kept in the
+                  module-level cache (_GOT_CACHE) across turns so the load cost is paid at warm()
+                  time, not inside a timed call.
 """
 import base64
+import io
 
 import httpx
 
@@ -90,5 +97,96 @@ def openai_vision(arm, payload, rec, timeout=None, temperature=None, max_tokens=
 
 BACKENDS = {"openai-vision": openai_vision}
 
-# Hosted, so nothing to warm — the same as the two remote LLM arms.
-LOADERS = {}
+
+# ---------------------------------------------------------------------------
+# GOT-OCR2 backend (FIXR-016): in-process transformers inference
+# ---------------------------------------------------------------------------
+
+# Module-level cache so the model and processor survive across turns. Keys are the
+# arm's repo_id so a second arm on the same weights (different quantisation, say)
+# gets a separate entry rather than the wrong processor.
+_GOT_CACHE: dict[str, tuple] = {}   # repo_id -> (model, processor)
+
+
+def _load_got_ocr2(arm):
+    """Download (if needed) and cache the GOT-OCR2 model + tokenizer.
+
+    Called by arms.warm() before anything is timed; the model weighs ~1.4 GB and
+    the first call will block while the HF hub fetches it. Subsequent calls are a
+    dict lookup.
+
+    `stepfun-ai/GOT-OCR2_0` ships its own model class (`modeling_GOT.py`) and tokenizer
+    (`tokenization_qwen.py`). `trust_remote_code=True` is required; the native transformers
+    `GotOcr2ForConditionalGeneration` has a different weight layout and cannot load this
+    checkpoint. `device_map` is absent — it requires `accelerate` which is not in the
+    project deps; the model loads to CPU and moves to GPU with `.cuda()` when available.
+    """
+    if arm.repo_id in _GOT_CACHE:
+        return
+    import torch
+    from transformers import AutoModel, AutoTokenizer
+
+    dtype = torch.float16 if torch.cuda.is_available() else torch.float32
+    tokenizer = AutoTokenizer.from_pretrained(
+        arm.repo_id, trust_remote_code=True, use_fast=False
+    )
+    model = AutoModel.from_pretrained(
+        arm.repo_id,
+        trust_remote_code=True,
+        torch_dtype=dtype,
+        low_cpu_mem_usage=True,
+        pad_token_id=tokenizer.eos_token_id,
+    )
+    if torch.cuda.is_available():
+        model = model.cuda()
+    model.eval()
+    _GOT_CACHE[arm.repo_id] = (model, tokenizer)
+
+
+def got_ocr2(arm, payload, rec, timeout=None):
+    """In-process OCR via stepfun-ai/GOT-OCR2_0.
+
+    `payload["image"]` is the raw screenshot bytes. The `prompt` key is present but
+    ignored — GOT-OCR2 has a fixed OCR task and no generalist instruction slot.
+
+    The model's `chat()` method takes an image file path (not bytes), so the raw bytes
+    are written to a temp file, the call is made, and the temp file is removed.
+    """
+    import os
+    import tempfile
+    import torch
+
+    if arm.repo_id not in _GOT_CACHE:
+        _load_got_ocr2(arm)
+    model, tokenizer = _GOT_CACHE[arm.repo_id]
+
+    if not torch.cuda.is_available():
+        raise RuntimeError(
+            f"{arm.id}: stepfun-ai/GOT-OCR2_0 hardcodes .cuda() in its chat() method "
+            "and cannot run without a GPU. Use the offline stub path in ingest.py or "
+            "run on a machine with CUDA."
+        )
+
+    suffix = ".png" if payload.get("media_type") == "image/png" else ".jpg"
+    with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as tmp:
+        tmp.write(payload["image"])
+        tmp_path = tmp.name
+
+    try:
+        with torch.inference_mode():
+            text = model.chat(tokenizer, tmp_path, ocr_type="ocr")
+    finally:
+        os.unlink(tmp_path)
+
+    text = (text or "").strip()
+    rec["read_chars"] = len(text)
+    rec["finish_reason"] = "stop"
+
+    if not text:
+        raise RuntimeError(f"{arm.id} produced no text from the screenshot.")
+    return text
+
+
+BACKENDS = {"openai-vision": openai_vision, "got-ocr2": got_ocr2}
+
+LOADERS = {"got-ocr2": _load_got_ocr2}

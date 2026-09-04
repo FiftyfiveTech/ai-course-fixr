@@ -237,6 +237,12 @@ VISION_ARMS = (
     Arm(repo_id="hf.co/ggml-org/Qwen2.5-VL-3B-Instruct-GGUF", provider="ollama",
         provider_model="hf.co/ggml-org/Qwen2.5-VL-3B-Instruct-GGUF:Q4_K_M",
         backend="openai-vision", alias="qwen2.5-vl", api_base=OLLAMA, local=True),
+    # FIXR-016: the OCR-specialist arm. Runs in-process via transformers; no daemon, no key.
+    # GOT-OCR2_0 is a Qwen2-based encoder-decoder fine-tuned exclusively on OCR tasks — it has no
+    # generalist instruction slot, so `prompt` is ignored by the got-ocr2 backend. Kept as the
+    # second arm so the comparison in scripts/ocr_compare.py is a table row, not a code change.
+    Arm(repo_id="stepfun-ai/GOT-OCR2_0", provider="local",
+        provider_model="stepfun-ai/GOT-OCR2_0", backend="got-ocr2", alias="got-ocr2"),
 )
 
 ARMS = {"stt": STT_ARMS, "llm": LLM_ARMS, "tts": TTS_ARMS, "embed": EMBED_ARMS,

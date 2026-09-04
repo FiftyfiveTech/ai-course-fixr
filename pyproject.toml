@@ -24,6 +24,10 @@ dependencies = [
     "pypdf>=6.16.1",
     "transformers>=4.44",   # local whisper arm, speecht5, and the sentence encoder
     "rank-bm25>=0.2.2",     # Okapi BM25 for the lexical half of retrieval
+    "pillow>=12.3.0",
+    "torchvision>=0.28.0",
+    "verovio>=6.3.0",
+    "tiktoken>=0.14.0",
 ]
 
 [dependency-groups]
